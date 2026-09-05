@@ -1,0 +1,3 @@
+locally install ollama, one of the qwen and geema models, and initialize it before progressing for the analysis to work.
+
+to execute simply run npm run dev in command prompt and execute the local host link

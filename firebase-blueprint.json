@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account information and privacy settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "twoFactorEnabled": { "type": "boolean" },
+        "privacySettings": {
+          "type": "object",
+          "properties": {
+            "sharePortfolio": { "type": "boolean" },
+            "allowPushNotifications": { "type": "boolean" }
+          }
+        },
+        "riskTolerance": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "PortfolioItem": {
+      "title": "Portfolio Item",
+      "description": "A stock holding",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "shares": { "type": "number" },
+        "averagePrice": { "type": "number" },
+        "addedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["symbol", "shares", "averagePrice"]
+    },
+    "WatchlistItem": {
+      "title": "Watchlist Item",
+      "description": "A stock on the user's watchlist",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "alertThresholdHigh": { "type": "number" },
+        "alertThresholdLow": { "type": "number" }
+      },
+      "required": ["symbol", "addedAt"]
+    },
+    "Strategy": {
+      "title": "Investment Strategy",
+      "description": "Generated investment strategy",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "symbol": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile documents"
+    },
+    "/users/{userId}/portfolio/{itemId}": {
+      "schema": { "$ref": "#/entities/PortfolioItem" },
+      "description": "User's portfolio holdings"
+    },
+    "/users/{userId}/watchlist/{itemId}": {
+      "schema": { "$ref": "#/entities/WatchlistItem" },
+      "description": "User's watchlist items"
+    },
+    "/users/{userId}/strategies/{strategyId}": {
+      "schema": { "$ref": "#/entities/Strategy" },
+      "description": "User's saved investment strategies"
+    }
+  }
+}

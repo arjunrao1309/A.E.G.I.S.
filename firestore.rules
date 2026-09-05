@@ -1,0 +1,179 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (matches auth.uid)
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required)
+    //   - name: string (optional, max length 50)
+    //   - createdAt: timestamp (required, immutable)
+    //   - twoFactorEnabled: boolean (optional)
+    //   - privacySettings: map (optional, allowed keys: sharePortfolio, allowPushNotifications)
+    //   - riskTolerance: string (optional, enum: low, medium, high)
+    //
+    // Collection: users/{userId}/portfolio
+    // Document ID: auto-generated or composite
+    // Fields:
+    //   - symbol: string (required, max length 10)
+    //   - shares: number (required, must be >= 0)
+    //   - averagePrice: number (required, must be >= 0)
+    //   - addedAt: timestamp (optional)
+    //
+    // Collection: users/{userId}/watchlist
+    // Document ID: auto-generated or composite
+    // Fields:
+    //   - symbol: string (required, max length 10)
+    //   - addedAt: timestamp (required)
+    //   - alertThresholdHigh: number (optional, must be >= 0)
+    //   - alertThresholdLow: number (optional, must be >= 0)
+    //
+    // Collection: users/{userId}/strategies
+    // Document ID: auto-generated
+    // Fields:
+    //   - content: string (required, max length 10000)
+    //   - createdAt: timestamp (required, immutable)
+    //   - symbol: string (optional, max length 10)
+    //   - tags: list (optional, max size 10, strings max length 20)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function isValidMap(mapData, allowedKeys) {
+      return mapData is map && mapData.keys().hasOnly(allowedKeys);
+    }
+
+    function isPositiveNumber(val) {
+      return val is number && val >= 0;
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string && 
+             request.resource.data[field].size() >= minLen && 
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    function isNonEmptyString(val) {
+        return val is string && val.size() > 0 && val.size() <= 10000;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUserProfile() {
+      let data = request.resource.data;
+      let isEmailValid = data.email is string && isValidEmail(data.email);
+      let isNameValid = !('name' in data) || (data.name is string && data.name.size() <= 50);
+      let isCreatedAtValid = data.createdAt is timestamp;
+      let isUidValid = data.uid == request.auth.uid;
+      let is2faValid = !('twoFactorEnabled' in data) || data.twoFactorEnabled is bool;
+      let isRiskValid = !('riskTolerance' in data) || data.riskTolerance in ['low', 'medium', 'high'];
+      
+      let isPrivacySettingsValid = !('privacySettings' in data) || (
+          data.privacySettings is map && 
+          data.privacySettings.keys().hasOnly(['sharePortfolio', 'allowPushNotifications']) &&
+          (!('sharePortfolio' in data.privacySettings) || data.privacySettings.sharePortfolio is bool) &&
+          (!('allowPushNotifications' in data.privacySettings) || data.privacySettings.allowPushNotifications is bool)
+      );
+
+      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'name', 'createdAt', 'twoFactorEnabled', 'privacySettings', 'riskTolerance']) &&
+             isEmailValid && isNameValid && isCreatedAtValid && isUidValid && is2faValid && isRiskValid && isPrivacySettingsValid;
+    }
+
+    function isValidPortfolioItem() {
+        let data = request.resource.data;
+        let isSymbolValid = validStringLength('symbol', 1, 10);
+        let isSharesValid = isPositiveNumber(data.shares);
+        let isPriceValid = isPositiveNumber(data.averagePrice);
+        let isAddedAtValid = !('addedAt' in data) || data.addedAt is timestamp;
+
+        return hasRequiredFields(['symbol', 'shares', 'averagePrice']) &&
+               data.keys().hasOnly(['symbol', 'shares', 'averagePrice', 'addedAt']) &&
+               isSymbolValid && isSharesValid && isPriceValid && isAddedAtValid;
+    }
+
+    function isValidWatchlistItem() {
+        let data = request.resource.data;
+        let isSymbolValid = validStringLength('symbol', 1, 10);
+        let isAddedAtValid = data.addedAt is timestamp;
+        let isHighValid = !('alertThresholdHigh' in data) || isPositiveNumber(data.alertThresholdHigh);
+        let isLowValid = !('alertThresholdLow' in data) || isPositiveNumber(data.alertThresholdLow);
+
+        return hasRequiredFields(['symbol', 'addedAt']) &&
+               data.keys().hasOnly(['symbol', 'addedAt', 'alertThresholdHigh', 'alertThresholdLow']) &&
+               isSymbolValid && isAddedAtValid && isHighValid && isLowValid;
+    }
+
+    function isValidStrategy() {
+        let data = request.resource.data;
+        let isContentValid = validStringLength('content', 1, 10000);
+        let isCreatedAtValid = data.createdAt is timestamp;
+        let isSymbolValid = !('symbol' in data) || validStringLength('symbol', 0, 10);
+        let isTagsValid = !('tags' in data) || (data.tags is list && data.tags.size() <= 10);
+        
+        return hasRequiredFields(['content', 'createdAt']) &&
+               data.keys().hasOnly(['content', 'createdAt', 'symbol', 'tags']) &&
+               isContentValid && isCreatedAtValid && isSymbolValid && isTagsValid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile();
+      allow update: if isOwner(userId) && isValidUserProfile() &&
+                    request.resource.data.uid == resource.data.uid &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      
+      match /portfolio/{itemId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPortfolioItem();
+        allow update: if isOwner(userId) && isValidPortfolioItem();
+        allow delete: if isOwner(userId);
+      }
+
+      match /watchlist/{itemId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidWatchlistItem();
+        allow update: if isOwner(userId) && isValidWatchlistItem();
+        allow delete: if isOwner(userId);
+      }
+
+      match /strategies/{strategyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidStrategy();
+        allow update: if isOwner(userId) && isValidStrategy() &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
